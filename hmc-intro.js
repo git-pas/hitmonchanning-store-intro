@@ -9,7 +9,7 @@ const overlay = document.getElementById('hmc-intro');
 const BASE = cfg.base || new URL('./', import.meta.url).href;
 const FPS = 30;
 const T = (frame) => (frame - 1) / FPS;            // Blender frame -> seconds
-const FLASH_START = T(168), FLASH_FULL = T(192), END = T(200);
+const FLASH_START = T(186), FLASH_FULL = T(208), END = T(215);
 const html = document.documentElement;
 const prevOverflow = html.style.overflow;
 let done = false;
@@ -44,11 +44,14 @@ function chrome() {
     color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:11px 16px;
     cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;animation:hmcIn .5s .4s forwards}
   #hmc-intro .hmc-skip:hover{background:rgba(255,255,255,.18)}
+  #hmc-intro .hmc-logo{position:absolute;right:max(18px,env(safe-area-inset-right));top:max(14px,env(safe-area-inset-top));z-index:3;
+    width:clamp(84px,11vw,150px);height:auto;pointer-events:none;filter:drop-shadow(0 4px 18px rgba(0,0,0,.55));opacity:0;animation:hmcLogo .8s .2s forwards}
+  @keyframes hmcLogo{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
   #hmc-intro .hmc-flash{position:absolute;inset:0;z-index:2;background:#fff8ec;opacity:0;pointer-events:none}
   #hmc-intro .hmc-tag{position:absolute;left:14px;top:14px;z-index:3;font:700 11px/1 system-ui,sans-serif;letter-spacing:.12em;
     color:#ffcf5a;border:1px solid #ffcf5a88;border-radius:4px;padding:6px 8px;background:#0008}
   #hmc-intro .hmc-load{position:absolute;left:50%;top:50%;width:90px;height:90px;margin:-45px 0 0 -45px;border-radius:50%;
-    background:radial-gradient(circle,#e8341c 0,#b3140a 55%,transparent 72%);filter:blur(2px);animation:hmcPulse 1.4s ease-in-out infinite}
+    background:radial-gradient(circle,#b98bff 0,#5b2a9e 55%,transparent 72%);filter:blur(2px);animation:hmcPulse 1.4s ease-in-out infinite}
   @keyframes hmcIn{to{opacity:.9}}
   @keyframes hmcPulse{50%{transform:scale(1.12);opacity:.75}}`;
   document.head.appendChild(css);
@@ -58,7 +61,9 @@ function chrome() {
   btn.addEventListener('click', (e) => { e.stopPropagation(); skip(); });
   const flash = document.createElement('div'); flash.className = 'hmc-flash';
   const load = document.createElement('div'); load.className = 'hmc-load';
-  overlay.append(load, flash, btn);
+  const logo = new Image(); logo.className = 'hmc-logo'; logo.alt = ''; logo.decoding = 'async';
+  logo.src = BASE + 'store-logo.webp';
+  overlay.append(load, flash, logo, btn);
   if (cfg.preview) { const t = document.createElement('div'); t.className = 'hmc-tag'; t.textContent = 'INTRO PREVIEW'; overlay.append(t); }
   overlay.addEventListener('pointerdown', skip);
   window.addEventListener('keydown', onKey);
@@ -94,7 +99,7 @@ async function main() {
   renderer.toneMappingExposure = 0.95;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color('#070d1c');
+  scene.background = null; // the purple space is drawn by the background pass
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
   scene.environmentIntensity = 0.22;
@@ -121,11 +126,12 @@ async function main() {
     if (!o.isMesh) return;
     if (o.name.startsWith('DB_LightRays')) {
       const m = o.material, tex = m.emissiveMap || m.map;
-      o.material = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(0.55, 0.45, 0.32), transparent: true, opacity: 0.85,
+      if (tex) { tex.wrapT = THREE.ClampToEdgeWrapping; tex.needsUpdate = true; }
+      o.material = new THREE.MeshBasicMaterial({ map: tex, color: new THREE.Color(0.55, 0.45, 0.32), transparent: true, opacity: 0.32,
         blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
       rays = o;
     } else if (o.name.startsWith('DB_LightCore')) {
-      o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(2.4, 2.05, 1.6), toneMapped: false }); core = o;
+      o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.7, 1.45, 1.1), toneMapped: false }); core = o;
     } else if (o.name.startsWith('SunGlow')) {
       o.material = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.15, 0.09, 0.025), toneMapped: false }); sun = o;
     }
@@ -142,7 +148,7 @@ async function main() {
     sun.add(halo);
   }
   const boxLamp = new THREE.PointLight(0xffd9a0, 0, 0.6, 2);
-  boxLamp.position.set(0, 0.112, 0);
+  boxLamp.position.set(0, 0.068, 0); // middle of the (empty) deck well
   (boxRoot || scene).add(boxLamp);
 
   // camera from Blender; keep its horizontal framing on narrow screens
@@ -150,18 +156,54 @@ async function main() {
   const hfov = 2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(cam.fov) / 2) * (16 / 9));
   function fit() {
     const w = innerWidth, h = innerHeight, a = w / h;
-    renderer.setSize(w, h, false); composer && composer.setSize(w, h);
+    renderer.setSize(w, h, false); composer && composer.setSize(w, h); bgMat && bgMat.uniforms.uRes.value.set(w, h);
     cam.aspect = a;
     const effA = Math.max(a, mobile ? 0.8 : 1.1); // portrait: zoom out, but not all the way
     cam.fov = a >= 16 / 9 ? THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(hfov / 2) / (16 / 9)))
                           : THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(hfov / 2) / effA));
-    if (a < 1) cam.setViewOffset(w, h, 0, -0.17 * h, w, h); else cam.clearViewOffset(); // portrait: frame lower
+    if (a < 1) cam.setViewOffset(w, h, 0, 0.04 * h, w, h); else cam.clearViewOffset(); // portrait: frame lower
     cam.updateProjectionMatrix();
   }
 
   const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, cam));
-  const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.5, 0.6, 1.0);
+  // background: dark purple space with shimmering stars (Hitmonchanning banner look)
+  const bgMat = new THREE.ShaderMaterial({
+    uniforms: { uTime: { value: 0 }, uRes: { value: new THREE.Vector2(innerWidth, innerHeight) } },
+    depthWrite: false, depthTest: false,
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader: `
+      uniform float uTime; uniform vec2 uRes; varying vec2 vUv;
+      float hash(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+      float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f);
+        return mix(mix(hash(i), hash(i + vec2(1, 0)), f.x), mix(hash(i + vec2(0, 1)), hash(i + 1.), f.x), f.y); }
+      float fbm(vec2 p){ float v = 0., a = .5; for (int i = 0; i < 5; i++){ v += a * noise(p); p *= 2.03; a *= .5; } return v; }
+      vec3 stars(vec2 px, float cell, float density, float t, float big){
+        vec2 g = floor(px / cell), f = px / cell - g; float h = hash(g);
+        if (h > density) return vec3(0);
+        vec2 pos = vec2(hash(g + 1.7), hash(g + 9.1)) * .8 + .1; vec2 d = (f - pos) * cell;
+        float b = hash(g + 3.3), r2 = dot(d, d);
+        float tw = .55 + .45 * sin(t * (1.2 + 3. * hash(g + 5.)) + h * 40.);
+        float core = exp(-r2 / (.35 + 2.2 * b * b * big));
+        float glint = b > .82 ? (exp(-abs(d.x) * .55) * exp(-d.y * d.y * .9) + exp(-abs(d.y) * .55) * exp(-d.x * d.x * .9)) * (b - .82) * 4.5 * big : 0.;
+        vec3 tint = hash(g + 7.) > .9 ? vec3(1., .82, .72) : (hash(g + 8.) > .8 ? vec3(.8, .85, 1.) : vec3(1.));
+        return tint * (core + glint * tw) * tw * (.35 + b);
+      }
+      void main(){
+        vec2 px = vUv * uRes + vec2(uTime * 4., 0.);
+        vec3 base = mix(vec3(.025, .018, .075), vec3(.085, .035, .17), vUv.y);
+        float n = fbm(vUv * vec2(3.2, 2.1) + vec2(uTime * .006, 0.)), n2 = fbm(vUv * 7. + 5.3);
+        base += vec3(.17, .05, .30) * smoothstep(.48, .92, n) * .55 + vec3(.06, .02, .14) * n2 * .45;
+        vec3 s = stars(px, 22., .28, uTime, .6) * .7 + stars(px + 13., 55., .5, uTime, 1.) * 1.1 + stars(px + 71., 130., .6, uTime * .8, 1.6) * 1.7;
+        gl_FragColor = vec4(pow(base, vec3(2.2)) + s, 1.);
+      }`,
+  });
+  const bgScene = new THREE.Scene();
+  const bgQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), bgMat); bgQuad.frustumCulled = false;
+  bgScene.add(bgQuad);
+  composer.addPass(new RenderPass(bgScene, new THREE.Camera()));
+  const mainPass = new RenderPass(scene, cam); mainPass.clear = false;
+  composer.addPass(mainPass);
+  const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.45, 0.38, 1.0);
   composer.addPass(bloom);
   composer.addPass(new OutputPass());
   if (mobile) bloom.resolution.set(innerWidth / 2, innerHeight / 2);
@@ -188,9 +230,10 @@ async function main() {
     clock.update(); t += Math.min(clock.getDelta(), 0.1);
     if (!isNaN(freeze)) t = freeze;
     mixer.setTime(Math.min(t, END));
-    const open = THREE.MathUtils.clamp((t - T(127)) / (T(140) - T(127)), 0, 1);
+    bgMat.uniforms.uTime.value = t;
+    const open = THREE.MathUtils.clamp((t - T(139)) / (T(165) - T(139)), 0, 1);
     boxLamp.intensity = open * (0.05 + 0.012 * Math.sin(t * 7));
-    bloom.strength = 0.5 + 0.45 * open + 1.6 * THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1);
+    bloom.strength = 0.45 + 0.25 * open + 1.6 * THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1);
     ui.flash.style.opacity = THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1) ** 1.6;
     composer.render();
     if (t >= END && isNaN(freeze)) return reveal();
