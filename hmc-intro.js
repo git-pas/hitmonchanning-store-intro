@@ -45,6 +45,8 @@ function chrome() {
     cursor:pointer;opacity:0;animation:hmcIn .4s .25s forwards;transition:transform .08s ease,box-shadow .08s ease,background-color .12s ease}
   #hmc-intro .hmc-skip:hover{background:#C80000}
   #hmc-intro .hmc-skip:active{transform:translate(2px,3px);box-shadow:2px 2px 0 #000}
+  #hmc-intro .hmc-ui{position:absolute;inset:0;z-index:3;pointer-events:none}
+  #hmc-intro .hmc-ui .hmc-skip{pointer-events:auto}
   #hmc-intro canvas.hmc-gl{opacity:0;transition:opacity .5s ease-out}   /* real background fades up from black */
   #hmc-intro .hmc-logo{position:absolute;right:max(18px,env(safe-area-inset-right));top:max(14px,env(safe-area-inset-top));z-index:3;
     width:clamp(84px,11vw,150px);height:auto;pointer-events:none;filter:drop-shadow(0 4px 18px rgba(0,0,0,.55));opacity:0;animation:hmcLogo .8s .2s forwards}
@@ -64,12 +66,14 @@ function chrome() {
   const flash = document.createElement('div'); flash.className = 'hmc-flash';
   const logo = new Image(); logo.className = 'hmc-logo'; logo.alt = ''; logo.decoding = 'async';
   logo.src = BASE + 'store-logo.webp';
-  overlay.append(flash, logo, btn);
+  const layer = document.createElement('div'); layer.className = 'hmc-ui';
+  layer.append(logo, btn);
+  overlay.append(flash, layer);
   overlay.style.background = '#000';   // solid black until the real scene fades up
-  if (cfg.preview) { const t = document.createElement('div'); t.className = 'hmc-tag'; t.textContent = 'INTRO PREVIEW'; overlay.append(t); }
+  if (cfg.preview) { const t = document.createElement('div'); t.className = 'hmc-tag'; t.textContent = 'INTRO PREVIEW'; layer.append(t); }
   overlay.addEventListener('pointerdown', skip);
   window.addEventListener('keydown', onKey);
-  return { flash };
+  return { flash, layer, btn };
 }
 
 async function main() {
@@ -243,6 +247,9 @@ async function main() {
     mixer.setTime(Math.min(t, END));
     bgMat.uniforms.uTime.value = t;
     const open = THREE.MathUtils.clamp((t - T(62)) / (T(80) - T(62)), 0, 1);
+    const uiFade = 1 - open * open * (3 - 2 * open);
+    ui.layer.style.opacity = uiFade.toFixed(3);
+    if (uiFade < 0.05) ui.btn.style.pointerEvents = 'none';
     boxLamp.intensity = open * (0.05 + 0.012 * Math.sin(t * 7));
     bloom.strength = 0.45 + 0.25 * open + 1.6 * THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1);
     ui.flash.style.opacity = THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1) ** 1.6;
