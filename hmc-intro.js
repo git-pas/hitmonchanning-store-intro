@@ -9,7 +9,7 @@ const overlay = document.getElementById('hmc-intro');
 const BASE = cfg.base || new URL('./', import.meta.url).href;
 const FPS = 30;
 const T = (frame) => (frame - 1) / FPS;            // Blender frame -> seconds
-const FLASH_START = T(186), FLASH_FULL = T(208), END = T(215);
+const FLASH_START = T(100), FLASH_FULL = T(116), END = T(120);   // 4 s cut
 const html = document.documentElement;
 const prevOverflow = html.style.overflow;
 let done = false;
@@ -33,17 +33,45 @@ function skip() {
   setTimeout(() => { renderer && renderer.dispose(); teardown(); }, 380);
 }
 
+/** Instant 2D version of the space background so stars are the very first thing on screen. */
+function paintStars(cv) {
+  const dpr = Math.min(devicePixelRatio || 1, 2), w = innerWidth, h = innerHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext('2d'); g.scale(dpr, dpr);
+  const bg = g.createLinearGradient(0, h, 0, 0);
+  bg.addColorStop(0, '#07051a'); bg.addColorStop(1, '#170a33'); g.fillStyle = bg; g.fillRect(0, 0, w, h);
+  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 7; i++) {   // soft violet nebula clouds
+    const x = rnd() * w, y = rnd() * h, r = (0.25 + rnd() * 0.45) * Math.max(w, h);
+    const n = g.createRadialGradient(x, y, 0, x, y, r);
+    n.addColorStop(0, 'rgba(92,40,160,0.22)'); n.addColorStop(1, 'rgba(60,20,110,0)');
+    g.fillStyle = n; g.fillRect(0, 0, w, h);
+  }
+  const count = Math.round(w * h / 1400);
+  for (let i = 0; i < count; i++) {
+    const x = rnd() * w, y = rnd() * h, b = rnd(), r = b > .97 ? 1.6 : b > .85 ? 1.0 : 0.6;
+    g.globalAlpha = 0.35 + b * 0.65; g.fillStyle = b > .95 && rnd() > .5 ? '#ffd9c8' : '#ffffff';
+    g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
+    if (b > .985) {   // 4-point glint like the banner
+      g.globalAlpha = 0.55; g.fillRect(x - 7, y - 0.5, 14, 1); g.fillRect(x - 0.5, y - 7, 1, 14);
+    }
+  }
+  g.globalAlpha = 1;
+}
+
 function chrome() {
   html.style.overflow = 'hidden';
   const css = document.createElement('style');
   css.textContent = `
   #hmc-intro{display:block;cursor:pointer;-webkit-tap-highlight-color:transparent}
   #hmc-intro canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
-  #hmc-intro .hmc-skip{position:absolute;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));
-    z-index:3;font:600 13px/1 system-ui,-apple-system,Segoe UI,sans-serif;letter-spacing:.08em;text-transform:uppercase;
-    color:#fff;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.28);border-radius:999px;padding:11px 16px;
-    cursor:pointer;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;animation:hmcIn .5s .4s forwards}
-  #hmc-intro .hmc-skip:hover{background:rgba(255,255,255,.18)}
+  #hmc-intro .hmc-skip{position:absolute;right:max(20px,env(safe-area-inset-right));bottom:max(22px,env(safe-area-inset-bottom));
+    z-index:3;font:800 13px/1 var(--hm-display,"Montserrat","Arial Black",sans-serif);letter-spacing:.06em;text-transform:uppercase;
+    color:#fff;background:#6A67A2;border:2px solid #000;border-radius:0;box-shadow:4px 5px 0 #000;padding:11px 16px 10px;
+    cursor:pointer;opacity:0;animation:hmcIn .4s .25s forwards;transition:transform .08s ease,box-shadow .08s ease,background-color .12s ease}
+  #hmc-intro .hmc-skip:hover{background:#C80000}
+  #hmc-intro .hmc-skip:active{transform:translate(2px,3px);box-shadow:2px 2px 0 #000}
+  #hmc-intro .hmc-stars{z-index:0}
   #hmc-intro .hmc-logo{position:absolute;right:max(18px,env(safe-area-inset-right));top:max(14px,env(safe-area-inset-top));z-index:3;
     width:clamp(84px,11vw,150px);height:auto;pointer-events:none;filter:drop-shadow(0 4px 18px rgba(0,0,0,.55));opacity:0;animation:hmcLogo .8s .2s forwards}
   @keyframes hmcLogo{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
@@ -52,7 +80,7 @@ function chrome() {
     color:#ffcf5a;border:1px solid #ffcf5a88;border-radius:4px;padding:6px 8px;background:#0008}
   #hmc-intro .hmc-load{position:absolute;left:50%;top:50%;width:90px;height:90px;margin:-45px 0 0 -45px;border-radius:50%;
     background:radial-gradient(circle,#b98bff 0,#5b2a9e 55%,transparent 72%);filter:blur(2px);animation:hmcPulse 1.4s ease-in-out infinite}
-  @keyframes hmcIn{to{opacity:.9}}
+  @keyframes hmcIn{to{opacity:1}}
   @keyframes hmcPulse{50%{transform:scale(1.12);opacity:.75}}`;
   document.head.appendChild(css);
   const btn = document.createElement('button');
@@ -60,10 +88,12 @@ function chrome() {
   btn.setAttribute('aria-label', 'Skip intro');
   btn.addEventListener('click', (e) => { e.stopPropagation(); skip(); });
   const flash = document.createElement('div'); flash.className = 'hmc-flash';
-  const load = document.createElement('div'); load.className = 'hmc-load';
+  const load = document.createElement('canvas'); load.className = 'hmc-stars';
+  paintStars(load);
   const logo = new Image(); logo.className = 'hmc-logo'; logo.alt = ''; logo.decoding = 'async';
   logo.src = BASE + 'store-logo.webp';
   overlay.append(load, flash, logo, btn);
+  overlay.style.background = 'transparent';
   if (cfg.preview) { const t = document.createElement('div'); t.className = 'hmc-tag'; t.textContent = 'INTRO PREVIEW'; overlay.append(t); }
   overlay.addEventListener('pointerdown', skip);
   window.addEventListener('keydown', onKey);
@@ -124,6 +154,13 @@ async function main() {
   gltf.scene.traverse((o) => {
     if (o.name === 'DeckBox') boxRoot = o;
     if (!o.isMesh) return;
+    if (o.material && o.material.name === 'Dice_CoinFlip') {
+      const m = o.material;
+      m.transmission = 0; m.transparent = true; m.opacity = 0.8; m.depthWrite = true;
+      m.roughness = 0.12; m.clearcoat = 1; m.clearcoatRoughness = 0.05;
+      m.emissive && m.emissive.set(0x3a1400);
+      m.needsUpdate = true;
+    }
     if (o.name.startsWith('DB_LightRays')) {
       const m = o.material, tex = m.emissiveMap || m.map;
       if (tex) { tex.wrapT = THREE.ClampToEdgeWrapping; tex.needsUpdate = true; }
@@ -219,7 +256,7 @@ async function main() {
   overlay.prepend(renderer.domElement);
   mixer.setTime(0);
   renderer.compile(scene, cam);
-  ui.load.remove();
+  let firstFrame = true;
 
   const clock = new THREE.Timer();
   let t = 0;
@@ -231,11 +268,12 @@ async function main() {
     if (!isNaN(freeze)) t = freeze;
     mixer.setTime(Math.min(t, END));
     bgMat.uniforms.uTime.value = t;
-    const open = THREE.MathUtils.clamp((t - T(139)) / (T(165) - T(139)), 0, 1);
+    const open = THREE.MathUtils.clamp((t - T(62)) / (T(80) - T(62)), 0, 1);
     boxLamp.intensity = open * (0.05 + 0.012 * Math.sin(t * 7));
     bloom.strength = 0.45 + 0.25 * open + 1.6 * THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1);
     ui.flash.style.opacity = THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1) ** 1.6;
     composer.render();
+    if (firstFrame) { firstFrame = false; requestAnimationFrame(() => ui.load.remove()); }
     if (t >= END && isNaN(freeze)) return reveal();
     requestAnimationFrame(frame);
   }
@@ -255,7 +293,7 @@ async function main() {
     renderer.domElement.remove(); renderer.dispose();
     overlay.style.background = 'transparent';
     overlay.style.pointerEvents = 'none';
-    const f = ui.flash, start = performance.now(), dur = 950;
+    const f = ui.flash, start = performance.now(), dur = 600;
     f.style.opacity = '1';
     (function grow(now) {
       const k = Math.min((now - start) / dur, 1), e = 1 - Math.pow(1 - k, 3);
