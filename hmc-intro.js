@@ -33,32 +33,6 @@ function skip() {
   setTimeout(() => { renderer && renderer.dispose(); teardown(); }, 380);
 }
 
-/** Instant 2D version of the space background so stars are the very first thing on screen. */
-function paintStars(cv) {
-  const dpr = Math.min(devicePixelRatio || 1, 2), w = innerWidth, h = innerHeight;
-  cv.width = w * dpr; cv.height = h * dpr;
-  const g = cv.getContext('2d'); g.scale(dpr, dpr);
-  const bg = g.createLinearGradient(0, h, 0, 0);
-  bg.addColorStop(0, '#07051a'); bg.addColorStop(1, '#170a33'); g.fillStyle = bg; g.fillRect(0, 0, w, h);
-  let seed = 7; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  for (let i = 0; i < 7; i++) {   // soft violet nebula clouds
-    const x = rnd() * w, y = rnd() * h, r = (0.25 + rnd() * 0.45) * Math.max(w, h);
-    const n = g.createRadialGradient(x, y, 0, x, y, r);
-    n.addColorStop(0, 'rgba(92,40,160,0.22)'); n.addColorStop(1, 'rgba(60,20,110,0)');
-    g.fillStyle = n; g.fillRect(0, 0, w, h);
-  }
-  const count = Math.round(w * h / 1400);
-  for (let i = 0; i < count; i++) {
-    const x = rnd() * w, y = rnd() * h, b = rnd(), r = b > .97 ? 1.6 : b > .85 ? 1.0 : 0.6;
-    g.globalAlpha = 0.35 + b * 0.65; g.fillStyle = b > .95 && rnd() > .5 ? '#ffd9c8' : '#ffffff';
-    g.beginPath(); g.arc(x, y, r, 0, 6.283); g.fill();
-    if (b > .985) {   // 4-point glint like the banner
-      g.globalAlpha = 0.55; g.fillRect(x - 7, y - 0.5, 14, 1); g.fillRect(x - 0.5, y - 7, 1, 14);
-    }
-  }
-  g.globalAlpha = 1;
-}
-
 function chrome() {
   html.style.overflow = 'hidden';
   const css = document.createElement('style');
@@ -71,8 +45,7 @@ function chrome() {
     cursor:pointer;opacity:0;animation:hmcIn .4s .25s forwards;transition:transform .08s ease,box-shadow .08s ease,background-color .12s ease}
   #hmc-intro .hmc-skip:hover{background:#C80000}
   #hmc-intro .hmc-skip:active{transform:translate(2px,3px);box-shadow:2px 2px 0 #000}
-  #hmc-intro .hmc-stars{z-index:0;opacity:0;animation:hmcFade .45s ease-out forwards}
-  @keyframes hmcFade{to{opacity:1}}
+  #hmc-intro canvas.hmc-gl{opacity:0;transition:opacity .5s ease-out}   /* real background fades up from black */
   #hmc-intro .hmc-logo{position:absolute;right:max(18px,env(safe-area-inset-right));top:max(14px,env(safe-area-inset-top));z-index:3;
     width:clamp(84px,11vw,150px);height:auto;pointer-events:none;filter:drop-shadow(0 4px 18px rgba(0,0,0,.55));opacity:0;animation:hmcLogo .8s .2s forwards}
   @keyframes hmcLogo{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
@@ -89,16 +62,14 @@ function chrome() {
   btn.setAttribute('aria-label', 'Skip intro');
   btn.addEventListener('click', (e) => { e.stopPropagation(); skip(); });
   const flash = document.createElement('div'); flash.className = 'hmc-flash';
-  const load = document.createElement('canvas'); load.className = 'hmc-stars';
-  paintStars(load);
   const logo = new Image(); logo.className = 'hmc-logo'; logo.alt = ''; logo.decoding = 'async';
   logo.src = BASE + 'store-logo.webp';
-  overlay.append(load, flash, logo, btn);
-  overlay.style.background = '#000';   // solid black underneath while the stars fade in
+  overlay.append(flash, logo, btn);
+  overlay.style.background = '#000';   // solid black until the real scene fades up
   if (cfg.preview) { const t = document.createElement('div'); t.className = 'hmc-tag'; t.textContent = 'INTRO PREVIEW'; overlay.append(t); }
   overlay.addEventListener('pointerdown', skip);
   window.addEventListener('keydown', onKey);
-  return { flash, load, starsAt: performance.now() };
+  return { flash };
 }
 
 async function main() {
@@ -254,10 +225,11 @@ async function main() {
   }
 
   renderer.domElement.setAttribute('aria-hidden', 'true');
+  renderer.domElement.classList.add('hmc-gl');
   overlay.prepend(renderer.domElement);
   mixer.setTime(0);
   renderer.compile(scene, cam);
-  let firstFrame = true;
+  let firstFrame = true, fadeAt = 0;
 
   const clock = new THREE.Timer();
   let t = 0;
@@ -266,7 +238,7 @@ async function main() {
   function frame() {
     if (stopLoop) return;
     clock.update(); t += Math.min(clock.getDelta(), 0.1);
-    if (performance.now() - ui.starsAt < 480) t = 0;   // let the stars finish fading in from black first
+    if (!fadeAt || performance.now() - fadeAt < 500) t = 0;   // hold frame 1 while the scene fades up from black
     if (!isNaN(freeze)) t = freeze;
     mixer.setTime(Math.min(t, END));
     bgMat.uniforms.uTime.value = t;
@@ -275,7 +247,7 @@ async function main() {
     bloom.strength = 0.45 + 0.25 * open + 1.6 * THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1);
     ui.flash.style.opacity = THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1) ** 1.6;
     composer.render();
-    if (firstFrame && performance.now() - ui.starsAt >= 480) { firstFrame = false; requestAnimationFrame(() => ui.load.remove()); }
+    if (firstFrame) { firstFrame = false; requestAnimationFrame(() => { renderer.domElement.style.opacity = '1'; fadeAt = performance.now(); }); }
     if (t >= END && isNaN(freeze)) return reveal();
     requestAnimationFrame(frame);
   }
