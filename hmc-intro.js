@@ -71,7 +71,8 @@ function chrome() {
     cursor:pointer;opacity:0;animation:hmcIn .4s .25s forwards;transition:transform .08s ease,box-shadow .08s ease,background-color .12s ease}
   #hmc-intro .hmc-skip:hover{background:#C80000}
   #hmc-intro .hmc-skip:active{transform:translate(2px,3px);box-shadow:2px 2px 0 #000}
-  #hmc-intro .hmc-stars{z-index:0}
+  #hmc-intro .hmc-stars{z-index:0;opacity:0;animation:hmcFade .45s ease-out forwards}
+  @keyframes hmcFade{to{opacity:1}}
   #hmc-intro .hmc-logo{position:absolute;right:max(18px,env(safe-area-inset-right));top:max(14px,env(safe-area-inset-top));z-index:3;
     width:clamp(84px,11vw,150px);height:auto;pointer-events:none;filter:drop-shadow(0 4px 18px rgba(0,0,0,.55));opacity:0;animation:hmcLogo .8s .2s forwards}
   @keyframes hmcLogo{from{opacity:0;transform:translateY(-8px) scale(.96)}to{opacity:1;transform:none}}
@@ -93,11 +94,11 @@ function chrome() {
   const logo = new Image(); logo.className = 'hmc-logo'; logo.alt = ''; logo.decoding = 'async';
   logo.src = BASE + 'store-logo.webp';
   overlay.append(load, flash, logo, btn);
-  overlay.style.background = 'transparent';
+  overlay.style.background = '#000';   // solid black underneath while the stars fade in
   if (cfg.preview) { const t = document.createElement('div'); t.className = 'hmc-tag'; t.textContent = 'INTRO PREVIEW'; overlay.append(t); }
   overlay.addEventListener('pointerdown', skip);
   window.addEventListener('keydown', onKey);
-  return { flash, load };
+  return { flash, load, starsAt: performance.now() };
 }
 
 async function main() {
@@ -265,6 +266,7 @@ async function main() {
   function frame() {
     if (stopLoop) return;
     clock.update(); t += Math.min(clock.getDelta(), 0.1);
+    if (performance.now() - ui.starsAt < 480) t = 0;   // let the stars finish fading in from black first
     if (!isNaN(freeze)) t = freeze;
     mixer.setTime(Math.min(t, END));
     bgMat.uniforms.uTime.value = t;
@@ -273,7 +275,7 @@ async function main() {
     bloom.strength = 0.45 + 0.25 * open + 1.6 * THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1);
     ui.flash.style.opacity = THREE.MathUtils.clamp((t - FLASH_START) / (FLASH_FULL - FLASH_START), 0, 1) ** 1.6;
     composer.render();
-    if (firstFrame) { firstFrame = false; requestAnimationFrame(() => ui.load.remove()); }
+    if (firstFrame && performance.now() - ui.starsAt >= 480) { firstFrame = false; requestAnimationFrame(() => ui.load.remove()); }
     if (t >= END && isNaN(freeze)) return reveal();
     requestAnimationFrame(frame);
   }
